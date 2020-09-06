@@ -99,3 +99,5 @@ contrib/modellauncher/modellauncher
 
 # don't checkin renv
 /renv/
+
+sandbox
