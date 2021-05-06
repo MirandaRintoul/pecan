@@ -38,14 +38,14 @@ Note the side effects of this function are that it will create two files in your
 
 The return from this function will be a summary table of statistics. The function will actually run two variants of the model, a "global" modelthat fits a single equation to all equations and a 'hierarchical' model that accounts for the variability among equations. This function also print out DIC statistics on which fit was better (lowest score wins): DIC is the hierarchical model, DICg is the global model.
 
-```{r}
+```{r, warning=FALSE}
 allom.stats = AllomAve(pfts,ngibbs=500)
 ```
 
 
 If you want to run with a response variable other than the default (e.g. components = 6; stem biomass), look up the relevant component IDs in data(allom.components). The default component is 3 (total aboveground biomass). Note that if you specify multiple PFTs (as a list) and multiple components (as a vector) then AllomAve will generate allometries for all PFT x component combinations
 
-```{r}
+```{r, warning=FALSE}
 allom.stats = AllomAve(pfts,ngibbs=500,components=c(3,6))
 ```
 

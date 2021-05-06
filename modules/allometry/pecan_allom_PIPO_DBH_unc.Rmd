@@ -1,0 +1,455 @@
+---
+title: "Allometry_testing"
+author: "Kelly Heilman"
+date: "9/4/2020"
+output: pdf_document
+---
+
+
+### Notes about setup--there are two options:
+1. Clone the pecan repo directly, then open this rmd in the repository. (Maybe best option because of dependancies)
+2. You can install the allometry module from github with the code below (from allometry vignette):
+library(devtools)
+# # if not run, need to install the pecan modules
+install_github("PecanProject/pecan",subdir="base/logger")
+install_github("PecanProject/pecan",subdir="allometry")
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(PEcAn.allometry)
+library(reshape2)
+library(ggplot2)
+library(tidyverse)
+
+```
+
+
+
+## Basic Pecan allometry tutorial
+Alot of this text and code is just annotated from the allometry vignette.
+To view the different components of the tree for which you could develop allomtrys + their abbreviations:
+
+```{r cars}
+data("allom.components")
+allom.components
+
+pfts = list(PIPO = data.frame(spcd=122,acronym='PIPO')) # list our "Pfts--plant functional types" of interest--really list the species
+
+```
+
+## AllomAve function in PEcAn allometry module
+- Fits the bayesian allomtric models for the pfts. ngibbs indicates the number of gibbs/mcmc samples
+- looks like there is a burn in of ~200
+- automatically outputs a pdf with the traceplots titled "allom.pipo.6.mcmc" and saves and .Rdata object.
+- not totally clear to be what the different betas are
+
+
+```{r,  warning=FALSE}
+allom.stats = AllomAve(pfts,components =6, ngibbs=1000) 
+allom.stats$PIPO
+
+
+
+allom.kaye = AllomAve(pfts, components = 4, ngibbs = 1000,
+                      parm = "~/agb_allometry/pecan/modules/allometry/kaye_pipo.csv")
+```
+
+## Predict for individual trees:
+- the allom.predict fuction will use the fit relationships from allomAve to predict the biomass component for the pft of interest (PIPO) over the DBH vector values:
+- dbh = diameter to predict at
+- component is which component of biomass to predict see defintation in the allom.components object
+- unclear to me whether component = 6 is predicting Stem biomass, or is only suing the diameter of the stem in the allometry equation
+- use = Bg 
+
+
+```{r}
+
+##Predict for individual trees:
+allom.fit = load.allom(getwd()) # get the allometry listed in our working directory
+allom.fit = load.allom("Allom.PIPO.6.Rdata")
+dbh = 1:50 # vector of DBH values to predict over
+
+pred = allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component = 6, use = "Bg", interval = "prediction") # predict allometries for trees with dbh 1:50, and get the prediction interval
+conf = allom.predict(allom.fit,dbh = dbh,pft = "PIPO",component = 6,use = "Bg",interval = "confidence")# predict allometries for trees with dbh 1:50, and get the confidence interval (including uncertainties)
+PI = apply(pred,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+CI = apply(conf,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+plot(dbh,CI[2,],type='l',lwd=3,ylim=range(PI),ylab="Biomass (kg)")
+lines(dbh,CI[1,],lty=2,col="blue")
+lines(dbh,CI[3,],lty=2,col="blue")
+lines(dbh,PI[1,],lty=3,col="red")
+lines(dbh,PI[3,],lty=3,col="red")
+
+```
+
+## read in DBH estimates with Uncertainty
+This code gives you an idea of what the posterior estimates of Tree DBH + uncertainty look like, using an example tree (tree 415).
+
+Overall, this dataset contains 7800 posterior estimates of tree diameter between 1965 - 2018 for 515 Pinus ponderosa trees in Arizona. 
+```{r}
+# the MCMC samples for tree diameter are in a big rds file 
+# note that these are just the last 7800 mcmc samples (from a mcmc of 750,000 samples total)
+Xests<- readRDS("~/agb_allometry/pecan/modules/allometry/IGF_xvals_SDI_SI.norand.X.nadapt.5000.rds")
+str(Xests) # structure is a list of 3 MCMC chains, 
+
+
+
+out      <- as.matrix(Xests) ### LOADS MCMC OUTPUT INTO OBJECT "OUT"
+x.cols   <- which(substr(colnames(out), 1, 1) == "x") # grab the state variable columns
+
+# generate 95% CI of the DBH
+ci      <- apply(out[, x.cols], 2, quantile, c(0.025, 0.5, 0.975))
+var.pred       <- apply(out[, x.cols], 2, var)
+# use mikes funciton to rename the x columns so that they indicate which tree and year it is referring to: x[tree, time]
+parse.MatrixNames <- function(w, pre = "x", numeric = FALSE) {
+  w <- sub(pre, "", w)
+  w <- sub("[", "", w, fixed = TRUE)
+  w <- sub("]", "", w, fixed = TRUE)
+  w <- matrix(unlist(strsplit(w, ",")), nrow = length(w), byrow = TRUE)
+  if (numeric) {
+    class(w) <- "numeric"
+  }
+  colnames(w) <- c("row", "col")
+  return(as.data.frame(w))
+} # parse.MatrixNames
+
+ci.names <- parse.MatrixNames(colnames(ci), numeric = TRUE)
+
+# plot the posterior predictions of DBH for a single tree:
+sel <- which(ci.names$row == 415) # use sel to subset the data for the 415th tree
+ci.415 <-ci[, sel]
+# do some hacky refomatting to get this into a formate that we can ggplot
+ci.415.df <- data.frame(year = 1966:2018, 
+                       median = as.vector(ci.415[2,]), 
+                       ci.lo = as.vector(ci.415[1,]),
+                       ci.hi = as.vector(ci.415[3,]))
+
+
+head(ci.415.df)
+
+# now plot DBH of tree 415 over time
+ggplot()+geom_ribbon(data = ci.415.df, aes(x = year, ymin = ci.lo, ymax = ci.hi), fill = "mediumpurple")+geom_line(data = ci.415.df, aes(x = year, y = median), color = "midnightblue")+theme_bw()+theme(panel.grid = element_blank())+ylab("Estimated DBH")+xlab("Year")#+ylim(0, 50)
+```
+Lets get an idea about how long the prediction will take with all the DBH uncertainty
+```{r}
+
+# I think one of they ways to propagate the uncertainty around the DBH estimates is to just use all the MCMC samples for each time, and tree in the pecan allom.predict function. Although this has potential to take a while. So I am testing with a subset of the data here 
+
+# use the MCMC samples, not the summarised CI data table 
+# the out matrix is a 7800 x 27295 matrix 
+   # the rows are 7800 mcmc samples for that tree and time period
+  # columns are the tree and time period combination, so x[23, 45] contains the DBH mcmc estimates for tree 23 at time period 45. There are 515 trees and 53 time points
+
+##Predict for individual trees:
+allom.fit = load.allom(getwd()) # get the allometry listed in our working directory
+
+PI <- list()
+
+i <- 1:10
+
+
+#dbh.df <- reshape2::melt(dbh)
+
+# function to run allom.predict on one dbh
+
+predict.mcmc.biomass <- function(i){
+  
+  dbh = out[,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+
+    pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+    PI[[i]] <-  apply(pred,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+    #print(i)
+}
+
+# compare time of apply and for loop
+system.time(lapply(1:10, predict.mcmc.biomass))
+ # user  system elapsed 
+ # 32.154   2.699  39.266 
+
+system.time(for(i in 1:10){
+  predict.mcmc.biomass(i)
+})
+
+ #  user  system elapsed 
+ # 32.743   3.208  39.182 
+
+# both of these will take a long time to do the whole time series for a given tree...lets sample randomly from the mcmcs:
+set.seed(22)
+smp.mcmc <- sample(1:7500, size = 100, replace = FALSE)
+
+# to speed this up, lets sample randomly from the mcmcs
+Pred.Interval<- Conf.Interval <- list()
+
+predict.mcmc.biomass.subsample <- function(i, int_type){
+  
+  dbh = out[smp.mcmc,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+
+     #pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     conf <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = int_type) 
+    
+    
+    #print(i)
+    conf
+}
+
+
+# lets run this for the 1st tree
+# need to set up a vector to do this:
+tree.1.index <- which(ci.names$row == 1)
+
+system.time(Conf.Interval <- lapply(tree.1.index, predict.mcmc.biomass.subsample))
+  #  user  system elapsed 
+  # 0.912   0.124   1.106 
+
+Conf.Interval <- lapply(tree.1.index, predict.mcmc.biomass.subsample, "confidence")
+Pred.Interval <- lapply(tree.1.index, predict.mcmc.biomass.subsample, "prediction")
+
+df_shape <- function(x){
+  conf.int.df <- data.frame(do.call(rbind, x))
+  conf.int.df$time <- rep(1:length(x), sapply(x, nrow)) # add an id for each DBH fit
+  conf.intervals.df.m <- reshape2::melt(conf.int.df, id.vars = c("time"))
+  # get the ci for each tree and time overall (This includes DBH + allometry uncertainty)
+  conf.intervals.quants <- conf.intervals.df.m %>% group_by(time) %>% summarise(median = quantile(value, 0.5), 
+                                                               ci.lo = quantile(value, 0.025), 
+                                                               ci.hi = quantile(value, 0.975))
+}
+
+
+
+
+conf.int.df <- data.frame(do.call(rbind, Conf.Interval))
+conf.int.df$time <- rep(1:length(Conf.Interval), sapply(Conf.Interval, nrow)) # add an id for each DBH fit
+
+
+# in conf.intervals.df, the uncertinaty from DBH uncertainty (from state space model) should be reflected in the distribution of each row, 
+# the MCMC samples from the allometry model are in the rows
+
+# lets get the median + 95% confidence intervals across rows and colums for each tree/timepoint to estimate the total biomass uncertainty from DBH uncertainty + allometric equation uncertianty 
+
+# basically, this means we need to calculate quantiles over all MCMC
+
+conf.intervals.df.m <- reshape2::melt(conf.int.df, id.vars = c("time"))
+
+# get the ci for each tree and time overall (This includes DBH + allometry uncertainty)
+conf.intervals.quants <- conf.intervals.df.m %>% group_by(time) %>% summarise(median = quantile(value, 0.5), 
+                                                               ci.lo = quantile(value, 0.025), 
+                                                               ci.hi = quantile(value, 0.975))
+
+
+# lets plot the timeseries of biomass!
+ggplot()+geom_ribbon(data = conf.intervals.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral4")+geom_line(data = conf.intervals.quants, aes(x = time, y = median))+ylab("Biomass for tree 1 (kg)")+theme_bw()+theme(panel.grid = element_blank())
+
+
+# this is just for one tree, so we should apply to all the trees, and also do a run where we don't include the DBH uncertainties, so we can parse the two
+```
+
+
+```{r}
+predict.mcmc.biomass.subsample <- function(i, int_type){
+  
+  dbh = out[smp.mcmc,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+
+     #pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     conf <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = int_type) 
+    
+    
+    #print(i)
+    conf
+}
+
+
+
+Conf.Interval <- lapply(tree.1.index, predict.mcmc.biomass.subsample, "confidence")
+Pred.Interval <- lapply(tree.1.index, predict.mcmc.biomass.subsample, "prediction")
+
+df_shape <- function(x){
+  conf.int.df <- data.frame(do.call(rbind, x))
+  conf.int.df$time <- rep(1:length(x), sapply(x, nrow)) # add an id for each DBH fit
+  conf.intervals.df.m <- reshape2::melt(conf.int.df, id.vars = c("time"))
+  # get the ci for each tree and time overall (This includes DBH + allometry uncertainty)
+  conf.intervals.quants <- conf.intervals.df.m %>% group_by(time) %>% summarise(median = quantile(value, 0.5), 
+                                                               ci.lo = quantile(value, 0.025), 
+                                                               ci.hi = quantile(value, 0.975))
+}
+
+df_shape_maxmin <- function(x){
+  conf.int.df <- data.frame(do.call(rbind, x))
+  conf.int.df$time <- rep(1:length(x), sapply(x, nrow)) # add an id for each DBH fit
+  conf.intervals.df.m <- reshape2::melt(conf.int.df, id.vars = c("time"))
+  # get the ci for each tree and time overall (This includes DBH + allometry uncertainty)
+  conf.intervals.quants <- conf.intervals.df.m %>% group_by(time) %>% summarise(median = quantile(value, 0.5), 
+                                                               ci.lo = quantile(value, 0), 
+                                                               ci.hi = quantile(value, 1))
+}
+
+
+Conf.quants <- df_shape(Conf.Interval)
+Pred.quants <- df_shape(Pred.Interval)
+
+
+ggplot() +
+  geom_ribbon(data = Pred.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral4") +
+  geom_line(data = Pred.quants, aes(x = time, y = median)) +
+  geom_ribbon(data = Conf.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral2") +
+  geom_line(data = Conf.quants, aes(x = time, y = median)) +
+  ylab("Biomass for tree 1 (kg)") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+
+tree.1.index <- which(ci.names$row == 1)
+
+
+agb_uncertainty_plots <- function(indices){
+  for(i in indices){
+    current_index <- which(ci.names$row == i)
+    Conf.Interval <- lapply(current_index, predict.mcmc.biomass.subsample, "confidence")
+    Pred.Interval <- lapply(current_index, predict.mcmc.biomass.subsample, "prediction")
+    Conf.quants <- df_shape(Conf.Interval)
+    Pred.quants <- df_shape(Pred.Interval)
+    
+    p <- ggplot() +
+      geom_ribbon(data = Pred.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral4") +
+      geom_line(data = Pred.quants, aes(x = time, y = median)) +
+      geom_ribbon(data = Conf.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral2") +
+      geom_line(data = Conf.quants, aes(x = time, y = median)) +
+      ylab(paste("Biomass for tree ", i,  " (kg)")) +
+      theme_bw() +
+      theme(panel.grid = element_blank())
+    
+    print(p)
+  }
+}
+
+agb_uncertainty_plots(c(1, 2, 3, 4))
+```
+
+```{r}
+set.seed(4324)
+predict.mcmc.biomass.dbh <- function(i, dbh_type){
+  
+  #dbh = out[smp.mcmc,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+  dbh_total = out[smp.mcmc, i]
+  
+  dbh_median = rep(median(out[smp.mcmc, i]), 100)
+
+     #pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     #conf <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     
+  if (dbh_type == "total"){
+    conf <-  allom.predict(allom.fit, dbh = dbh_total, pft = "PIPO", component =6, use = "Bg", interval = "confidence") 
+  }else if (dbh_type == "median"){
+    conf <-  allom.predict(allom.fit, dbh = dbh_median, pft = "PIPO", component =6, use = "Bg", interval = "confidence") 
+  }
+    
+    
+    #print(i)
+    conf
+}
+
+sel <- which(ci.names$row == 415) # use sel to subset the data for the 415th tree
+ci.415 <-ci[, sel]
+# do some hacky refomatting to get this into a formate that we can ggplot
+ci.415.df <- data.frame(year = 1966:2018, 
+                       median = as.vector(ci.415[2,]), 
+                       ci.lo = as.vector(ci.415[1,]),
+                       ci.hi = as.vector(ci.415[3,]))
+
+
+dbh_uncertainty_plots <- function(indices){
+  for(i in indices){
+    current_index <- which(ci.names$row == i)
+    #current_tree <- ci[, current_index]
+    #dbh_median = as.vector(current_tree[2,])
+    dbh.Interval <- lapply(current_index, predict.mcmc.biomass.dbh, "total")
+    median.Interval <- lapply(current_index, predict.mcmc.biomass.dbh, "median")
+    dbh.quants <- df_shape(dbh.Interval)
+    median.quants <- df_shape(median.Interval)
+    
+    p <- ggplot() +
+      geom_ribbon(data = dbh.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "blue2", alpha = .4) +
+      geom_line(data = dbh.quants, aes(x = time, y = median)) +
+      geom_ribbon(data = median.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral2", alpha = .4) +
+      geom_line(data = median.quants, aes(x = time, y = median)) +
+
+      ylab(paste("Biomass for tree ", i,  " (kg)")) +
+      theme_bw() +
+      theme(panel.grid = element_blank())
+    
+    print(p)
+  }
+}
+
+dbh_uncertainty_plots(1)
+```
+
+```{r}
+set.seed(4324)
+predict.mcmc.biomass.all <- function(i, dbh_type){
+  
+  #dbh = out[smp.mcmc,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+  dbh_total = out[smp.mcmc, i]
+  
+  dbh_median = rep(median(out[smp.mcmc, i]), 100)
+
+     #pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     #conf <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     
+  if (dbh_type == "total"){
+    conf <-  allom.predict(allom.fit, dbh = dbh_total, pft = "PIPO", component =6, use = "Bg", interval = "confidence") 
+  }else if (dbh_type == "median"){
+    conf <-  allom.predict(allom.fit, dbh = dbh_median, pft = "PIPO", component =6, use = "Bg", interval = "confidence") 
+  }else if (dbh_type == "predict"){
+    conf <-  allom.predict(allom.fit, dbh = dbh_total, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+  }
+    
+    
+    #print(i)
+    conf
+}
+
+
+
+all_uncertainty_plots <- function(indices){
+  for(i in indices){
+    current_index <- which(ci.names$row == i)
+    #current_tree <- ci[, current_index]
+    #dbh_median = as.vector(current_tree[2,])
+    dbh.Interval <- lapply(current_index, predict.mcmc.biomass.all, "total")
+    median.Interval <- lapply(current_index, predict.mcmc.biomass.all, "median")
+    pred.Interval <- lapply(current_index, predict.mcmc.biomass.all, "predict")
+    dbh.quants <- df_shape(dbh.Interval)
+    median.quants <- df_shape(median.Interval)
+    pred.quants <- df_shape(pred.Interval)
+    
+    p <- ggplot() +
+      geom_ribbon(data = pred.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral4") +
+      geom_line(data = pred.quants, aes(x = time, y = median)) +
+      geom_ribbon(data = dbh.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "blue2") +
+      geom_line(data = dbh.quants, aes(x = time, y = median)) +
+      geom_ribbon(data = median.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral2") +
+      geom_line(data = median.quants, aes(x = time, y = median)) +
+
+      ylab(paste("Biomass for tree ", i,  " (kg)")) +
+      theme_bw() +
+      theme(panel.grid = element_blank())
+    
+    print(p)
+  }
+}
+
+
+all_uncertainty_plots(c(1))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,110 @@
+---
+title: "Allometry_testing"
+author: "Kelly Heilman"
+date: "9/4/2020"
+output: pdf_document
+---
+
+
+### Notes about setup--there are two options:
+1. Clone the pecan repo directly, then open this rmd in the repository. (Maybe best option because of dependancies)
+2. You can install the allometry module from github with the code below (from allometry vignette):
+library(devtools)
+# # if not run, need to install the pecan modules
+install_github("PecanProject/pecan",subdir="base/logger")
+install_github("PecanProject/pecan",subdir="allometry")
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(PEcAn.allometry)
+```
+
+
+
+## Basic Pecan allometry tutorial
+Alot of this text and code is just annotated from the allometry vignette.
+To view the different components of the tree for which you could develop allomtrys + their abbreviations:
+
+```{r cars}
+
+data("allom.components")
+allom.components
+
+pfts = list(PIPO = data.frame(spcd=122,acronym='PIPO')) # list our "Pfts--plant functional types" of interest--really list the species
+
+```
+
+## AllomAve function in PEcAn allometry module
+- Fits the bayesian allomtric models for the pfts. ngibbs indicates the number of gibbs/mcmc samples
+- looks like there is a burn in of ~200
+- automatically outputs a pdf with the traceplots titled "allom.pipo.6.mcmc" and saves and .Rdata object.
+- not totally clear to be what the different betas are
+
+
+```{r,  warning=FALSE}
+allom.stats = AllomAve(pfts,components =6, ngibbs=1000) 
+allom.stats$PIPO
+```
+
+## Predict for individual trees:
+- the allom.predict fuction will use the fit relationships from allomAve to predict the biomass component for the pft of interest (PIPO) over the DBH vector values:
+- dbh = diameter to predict at
+- component is which component of biomass to predict see defintation in the allom.components object
+- unclear to me whether component = 6 is predicting Stem biomass, or is only suing the diameter of the stem in the allometry equation
+- use = Bg 
+
+
+```{r}
+
+##Predict for individual trees:
+allom.fit = load.allom(getwd()) # get the allometry listed in our working directory
+dbh = 1:50 # vector of DBH values to predict over
+
+pred = allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") # predict allometries for trees with dbh 1:50, and get the prediction interval
+conf = allom.predict(allom.fit,dbh = dbh,pft = "PIPO",component = 6,use = "Bg",interval = "confidence")# predict allometries for trees with dbh 1:50, and get the confidence interval (including uncertainties)
+PI = apply(pred,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+CI = apply(conf,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+plot(dbh,CI[2,],type='l',lwd=3,ylim=range(PI),ylab="Biomass (kg)") +
+lines(dbh,CI[1,],lty=2,col="blue") +
+lines(dbh,CI[3,],lty=2,col="blue") +
+lines(dbh,PI[1,],lty=3,col="red") +
+lines(dbh,PI[3,],lty=3,col="red")
+
+```
+
+## other stuff I learned from digging:
+- there is a file in the pecan repository that has a table with all the beta parameters from jenkins
+
+- really we want to use the query.allom.data function to query the "field" data, but there is a database that this function connects to via "con=" argument...and I can't figure out where this database is located/what the connection should be
+```{r}
+
+jenkins.table <- read.csv(system.file("data/Table3_GTR-NE-319.v2.csv", package = "PEcAn.allometry"), header = TRUE)
+#colnames(jenkins.table)[1] <- c("")
+head(jenkins.table)
+
+# other functions
+#??AllomAve
+
+
+#??AllomUnitCoef # converts length units FROM cm TO specified units converts mass units TO kg FROM specificed units
+
+
+
+#??allom.BayesFit #Module to fit a common power-law allometric model to a mixture of raw data and allometric equations in a Heirarchical Bayes framework with multiple imputation of the allometric data
+
+
+#??allom.predict # Function for making tree-level Monte Carlo predictions from allometric equations estimated from the PEcAn allometry module
+
+
+
+#??load.allom() # load .allom files
+
+# This is proabably what we want
+#??query.allom.data# Module to grab allometric information from the raw data table Will grab both original field data and tallied equations
+                    #Tallied equation format based on Jenkins et al 2004 USFS General Technical Report NE-319
+
+#??read.allom.data # Extracts PFT- and component-specific data and allometeric equations from the specified files.
+
+# note that query.allom.data is not an exported fuction from the stand alone module....
+#query.allom.data("PIPO")
+```

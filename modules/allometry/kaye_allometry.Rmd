@@ -1,0 +1,118 @@
+---
+title: "Kaye Pecan Allometry"
+author: "Miranda Rintoul"
+date: "12/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(PEcAn.allometry)
+library(reshape2)
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r, warning=F}
+pfts = list(PIPO = data.frame(spcd=122,acronym='PIPO')) # list our "Pfts--plant functional types" of interest--really list the species
+
+# Run AllomAve for each component in Kaye
+kaye_pipo = AllomAve(pfts, components = c(4, 5, 8, 12, 18), ngibbs = 1000,
+                      parm = "~/agb_allometry/pecan/modules/allometry/kaye_pipo.csv")
+```
+
+```{r}
+allom.stemwood = load.allom("~/agb_allometry/pecan/modules/allometry/Allom.PIPO.4.Rdata")
+allom.stembark = load.allom("~/agb_allometry/pecan/modules/allometry/Allom.PIPO.5.Rdata")
+allom.branchlive = load.allom("~/agb_allometry/pecan/modules/allometry/Allom.PIPO.8.Rdata")
+allom.branchdead = load.allom("~/agb_allometry/pecan/modules/allometry/Allom.PIPO.12.Rdata")
+allom.foliage = load.allom("~/agb_allometry/pecan/modules/allometry/Allom.PIPO.18.Rdata")
+dbh = 1:50 # vector of DBH values to predict over
+
+pred = allom.predict(allom.stemwood, dbh = dbh, pft = "PIPO", use = "Bg", interval = "prediction") # predict allometries for trees with dbh 1:50, and get the prediction interval
+conf = allom.predict(allom.stemwood,dbh = dbh,pft = "PIPO", use = "Bg",interval = "confidence")# predict allometries for trees with dbh 1:50, and get the confidence interval (including uncertainties)
+PI = apply(pred,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+CI = apply(conf,2,quantile,c(0.025,0.5,0.975),na.rm=TRUE)
+plot(dbh,CI[2,],type='l',lwd=3,ylim=range(PI),ylab="Biomass (kg)")
+lines(dbh,CI[1,],lty=2,col="blue")
+lines(dbh,CI[3,],lty=2,col="blue")
+lines(dbh,PI[1,],lty=3,col="red")
+lines(dbh,PI[3,],lty=3,col="red")
+```
+
+```{r}
+# the MCMC samples for tree diameter are in a big rds file 
+# note that these are just the last 7800 mcmc samples (from a mcmc of 750,000 samples total)
+Xests<- readRDS("~/agb_allometry/pecan/modules/allometry/IGF_xvals_SDI_SI.norand.X.nadapt.5000.rds")
+str(Xests) # structure is a list of 3 MCMC chains, 
+
+out      <- as.matrix(Xests) ### LOADS MCMC OUTPUT INTO OBJECT "OUT"
+```
+
+```{r}
+df_shape <- function(x){
+  conf.int.df <- data.frame(do.call(rbind, x))
+  conf.int.df$time <- rep(1:length(x), sapply(x, nrow)) # add an id for each DBH fit
+  conf.intervals.df.m <- reshape2::melt(conf.int.df, id.vars = c("time"))
+  # get the ci for each tree and time overall (This includes DBH + allometry uncertainty)
+  conf.intervals.quants <- conf.intervals.df.m %>% group_by(time) %>% summarise(median = quantile(value, 0.5), 
+                                                               ci.lo = quantile(value, 0.025), 
+                                                               ci.hi = quantile(value, 0.975))
+}
+```
+
+```{r}
+predict.mcmc.biomass.subsample <- function(i, int_type){
+  
+  dbh = out[smp.mcmc,i] # get dbh predictions for all the mcmcs for tree 1 at time point 1
+
+     #pred <-  allom.predict(allom.fit, dbh = dbh, pft = "PIPO", component =6, use = "Bg", interval = "prediction") 
+     conf <-  allom.predict(allom.stemwood, dbh = dbh, pft = "PIPO", component =4, use = "Bg", interval = int_type) 
+    
+    
+    #print(i)
+    conf
+}
+
+agb_uncertainty_plots <- function(indices){
+  for(i in indices){
+    current_index <- which(ci.names$row == i)
+    Conf.Interval <- lapply(current_index, predict.mcmc.biomass.subsample, "confidence")
+    Pred.Interval <- lapply(current_index, predict.mcmc.biomass.subsample, "prediction")
+    Conf.quants <- df_shape(Conf.Interval)
+    Pred.quants <- df_shape(Pred.Interval)
+    
+    p <- ggplot() +
+      geom_ribbon(data = Pred.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral4") +
+      geom_line(data = Pred.quants, aes(x = time, y = median)) +
+      geom_ribbon(data = Conf.quants, aes(x = time, ymin = ci.lo, ymax = ci.hi), fill = "coral2") +
+      geom_line(data = Conf.quants, aes(x = time, y = median)) +
+      ylab(paste("Biomass for tree ", i,  " (kg)")) +
+      theme_bw() +
+      theme(panel.grid = element_blank())
+    
+    print(p)
+  }
+}
+
+agb_uncertainty_plots(c(1))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,8 @@
+"Kaye PIPO equations",,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Species","Common Name","Component ID","Equation Form ID","a","b","c","d","e","Diameter","Corrected for bias","Bias correction (CF)","r","R2","MinDiameter","MaxDiameter","Sample size","Stump height","Top d.o.b.","Units diameter","Units biomass","Component","Component sum","Ratio equation","Segmented equation","Equation number","Source","Notes"
+122,ponderosa pine,4,6,1.0469,-4.1279,2.7039,0,,d.b.h.,,,0,0.96,16,81,26,,,cm,kg,,,,,,,
+122,ponderosa pine,5,6,1.0304,-4.2291,2.2691,0,,d.b.h.,,,0,0.96,16,81,26,,,cm,kg,,,,,,,
+122,ponderosa pine,8,6,1.0425,-6.0278,2.8655,0,,d.b.h.,,,0,0.97,16,81,26,,,cm,kg,,,,,,,
+122,ponderosa pine,12,6,1.1322,-5.3589,2.25,0,,d.b.h.,,,0,0.85,16,81,26,,,cm,kg,,,,,,,
+122,ponderosa pine,18,6,1.0672,-4.1317,2.0159,0,,d.b.h.,,,0,0.9,16,81,26,,,cm,kg,,,,,,,
